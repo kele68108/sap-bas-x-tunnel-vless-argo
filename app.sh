@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# [NEXUS_ULTRA_V5] 赛博先知 液态金属流式版 (突破 64MB shm 限制)
+# [NEXUS_ULTRA_V6] 赛博先知 终极液态金属版 (修复动态库 + 强制清场)
 # ==========================================
 
 if [ -z "$CF_TOKEN" ]; then
@@ -15,38 +15,41 @@ PIPE_PATH="/tmp/gemma_stream"
 mkdir -p $WORK_DIR
 cd $WORK_DIR
 
-# 1. 获取探针与引擎核心 (放在本地硬盘，体积极小)
-echo "[NEXUS] 正在获取稳定版探针与引擎..."
+# 1. 抓取探针与引擎核心 (包含所有动态依赖库)
+echo "[NEXUS] 正在获取稳定版探针与引擎核心..."
 if [ ! -f "cloudflared" ]; then
     wget -qO cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
     chmod +x cloudflared
 fi
 
-if [ ! -f "llama-server" ]; then
+if [ ! -f "llama-server" ] || [ ! -f "libllama.so" ]; then
+    echo "[NEXUS] 正在下载并解压完整的引擎组件..."
     STABLE_LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/b4618/llama-b4618-bin-ubuntu-x64.zip"
     wget -qO llama.zip "$STABLE_LLAMA_URL"
-    unzip -q -o -j llama.zip '*llama-server' && rm llama.zip
+    
+    # 【关键修复1】：同时提取 server 和所有 .so 动态链接库！
+    unzip -q -o -j llama.zip '*llama-server' '*.so' && rm llama.zip
     chmod +x llama-server
 fi
 
-# 2. 清理旧战场
+# 2. 深度清理旧战场（消灭 64MB 的碎片毒瘤）
+echo "[NEXUS] 正在执行深度清场..."
 pkill -f llama-server
 pkill -f cloudflared
 rm -f "$PIPE_PATH"
-
-# 3. 建立“液态金属”流式管道
-echo "[NEXUS] 正在构建虚拟数据管道..."
+# 强制清理 RAM Disk 中上次失败的残留文件
+rm -f /dev/shm/gemma* # 3. 建立“液态金属”流式管道
+echo "[NEXUS] 正在构建虚拟数据管道 (绕开 64MB shm 限制)..."
 mkfifo "$PIPE_PATH"
 
 # 4. 后台疯狂接水 (将 5.4GB 数据灌入管道)
 echo "[NEXUS] 正在从公网抽取 Gemma 2 (5.4GB) 纯量能量流..."
-# 注意：这里我们让它在后台默默下载，只要引擎端开始吸，它就会一直流
 curl -s -L "$MODEL_URL" > "$PIPE_PATH" &
 
-# 5. 8核引擎全功率点火 (从管道中吸取数据存入堆内存)
+# 5. 8核引擎全功率点火 (绑定动态库路径)
 echo "[NEXUS] 引擎开始吞噬管道流，分配进程内存..."
-# 【极其重要】：必须加 --no-mmap，强迫引擎把数据加载到 64G 内存堆中！
-nohup ./llama-server -m "$PIPE_PATH" --no-mmap \
+# 【关键修复2】：使用 env LD_LIBRARY_PATH=$PWD 让引擎能找到脚底下的 .so 文件
+nohup env LD_LIBRARY_PATH=$PWD ./llama-server -m "$PIPE_PATH" --no-mmap \
     -c 4096 --host 0.0.0.0 --port 8080 \
     -t 8 > /tmp/gemma_ultra.log 2>&1 &
 
@@ -54,6 +57,5 @@ nohup ./llama-server -m "$PIPE_PATH" --no-mmap \
 echo "[NEXUS] 正在撕开 BTP 防火墙..."
 nohup ./cloudflared tunnel run --token $CF_TOKEN > /tmp/tunnel.log 2>&1 &
 
-echo "[NEXUS] 注入进程已启动！"
+echo "[NEXUS] 重装甲已完全上线！"
 echo "[>>] 请使用 tail -f /tmp/gemma_ultra.log 查看引擎加载进度。"
-echo "[>>] 注意：因为是流式加载 5.4GB 数据，大概需要等待 3-5 分钟引擎才能吐出 HTTP server listening。"
