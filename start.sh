@@ -45,12 +45,10 @@ rm -f "$WORK_DIR"/* 2>/dev/null
 WEB_NAME=$(tr -dc a-z </dev/urandom | head -c 6)
 BOT_NAME=$(tr -dc a-z </dev/urandom | head -c 6)
 XT_NAME=$(tr -dc a-z0-9 </dev/urandom | head -c 8)
-CF_NAME=$(tr -dc a-z0-9 </dev/urandom | head -c 8)
 
 WEB_PATH="$WORK_DIR/$WEB_NAME"
 BOT_PATH="$WORK_DIR/$BOT_NAME"
 XT_PATH="$WORK_DIR/$XT_NAME"
-CF_PATH="$WORK_DIR/$CF_NAME"
 CONFIG_PATH="$WORK_DIR/config.json"
 SUB_PATH_FILE="$WORK_DIR/sub.txt"
 
@@ -85,7 +83,7 @@ cat <<EOF > "$CONFIG_PATH"
   },
   "inbounds": [
     {
-      "port": $VLESS_PORT,
+      "port": $ARGO_PORT,
       "protocol": "vless",
       "settings": {
         "clients": [{"id": "$UUID", "level": 0}],
