@@ -1,63 +1,146 @@
-cat << 'EOF' > ~/run_v7.sh
-#!/bin/bash
-# ==========================================
-# [NEXUS_ULTRA_V7] 返璞归真版 (1.6GB Gemma 2 2B)
-# 放弃幻想，回归物理硬盘，榨干 8 核算力！
-# ==========================================
+#!/usr/bin/env bash
 
-if [ -z "$CF_TOKEN" ]; then
-    echo "[!!FATAL!!] 核心密钥缺失！"
-    exit 1
-fi
+# ==========================================================
+# SAP-BAS环境一键部署[x-tunnel+vless-argo]代理协议开机自启一键脚本
+# ==========================================================
 
-WORK_DIR="/home/user/projects/ai_core"
-# 换用 1.1GB 的 Qwen2-1.5B 模型，完美适配 3.9GB 硬盘
-MODEL_NAME="qwen2-1_5b-instruct-q4_k_m.gguf"
-MODEL_URL="https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q4_k_m.gguf"
+# ---------------------------------------------------------
+# 🔻 绝密配置区 (变量直填) 🔻
+# ---------------------------------------------------------
+# 【系统保活探针】
+# 其他隧道切勿占用
+HTTP_PORT="8080"
 
-mkdir -p $WORK_DIR
-cd $WORK_DIR
+# 【VLESS+ARGO 代理配置】
+UUID="6948adff-5e1e-4f52-9c9c-11b707390b8b"
+VLESS_DOMAIN="10.oxxx.qzz.io"
+VLESS_ARGO_TOKEN="eyJhIjoiNTA0NmI1ODdjNmU0YmRhN2FlNTM2ZGZjZGVjM2M1NDkiLCJ0IjoiYjQ5YmNjOWEtYzE5OS00MTc3LWEwZGEtZjMwMmNmNDMzNGQ4IiwicyI6Ik0yVTRPV0kwTURRdE9UUmhZUzAwTldKaUxXRXlPV0V0WldObVlXUTJZVEJrWVRBMSJ9"
+# 请勿和系统保活端口以及其他隧道端口冲突
+VLESS_PORT="8001"
+CFIP="sin.cfip.oxxxx.de"
+CFPORT="443"
+VLESS_NAME="SAP-BAS"
 
-echo "[NEXUS] 正在获取探针与完整引擎核心..."
-if [ ! -f "cloudflared" ]; then
-    wget -qO cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-    chmod +x cloudflared
-fi
+# 【X-Tunnel 代理配置 】
+X_TOKEN="kele666"
+XT_ARGO_TOKEN="eyJhIjoiNTA0NmI1ODdjNmU0YmRhN2FlNTM2ZGZjZGVjM2M1NDkiLCJ0IjoiZmJkNWRjOTQtYzE1Zi00MGY4LTk5YmItNzc0OTZjOTlmMWI3IiwicyI6Ik9UazVNbVZrTkdVdFpUVTBZaTAwWW1NMkxUbGhNV1l0Wm1NMk5EWm1aREJpWkdaayJ9"
+# 请勿和系统保活端口以及其他隧道端口冲突
+XT_INTERNAL_PORT="8002"
+# ---------------------------------------------------------
 
-if [ ! -f "libllama.so" ]; then
-    rm -f llama-server
-    echo "[NEXUS] 下载并解压完整的引擎组件..."
-    STABLE_LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/b4618/llama-b4618-bin-ubuntu-x64.zip"
-    wget -qO llama.zip "$STABLE_LLAMA_URL"
-    unzip -q -o -j llama.zip '*llama-server' '*.so' && rm llama.zip
-    chmod +x llama-server
-fi
+WORK_DIR="/tmp/sap_core"
 
-echo "[NEXUS] 正在清理所有历史遗留的管道和坏死文件..."
-pkill -f llama-server
-pkill -f cloudflared
-rm -f /tmp/gemma_stream
-rm -f /dev/shm/gemma*
-# 清理可能占满硬盘的 npm/pip 缓存以释放空间
-rm -rf ~/.cache/pip/* rm -rf ~/.npm/_cacache/*
+echo "[+] 启动清理程序，清除旧的僵尸进程..."
+fuser -k -9 $HTTP_PORT/tcp $VLESS_PORT/tcp 3001/tcp 3002/tcp $XT_INTERNAL_PORT/tcp >/dev/null 2>&1 || true
+pkill -9 -f "cloudflared" >/dev/null 2>&1 || true
+pkill -9 -f "x-tunnel" >/dev/null 2>&1 || true
 
-echo "[NEXUS] 正在将 1.6GB 轻量核弹安全降落至物理硬盘..."
-# 使用 -C - 支持断点续传，防止网络波动
-if [ ! -f "$MODEL_NAME" ]; then
-    curl -L -C - -o "$MODEL_NAME" "$MODEL_URL" 
-fi
+# --- 1. 环境准备与文件混淆 ---
+mkdir -p "$WORK_DIR"
+rm -f "$WORK_DIR"/* 2>/dev/null
 
-echo "[NEXUS] 8核引擎全功率点火！(使用原生 mmap 映射至 64G 内存)"
-# 回归正常的 mmap 模式，让 Linux 自己管理内存
-nohup env LD_LIBRARY_PATH=$PWD ./llama-server -m "$MODEL_NAME" \
-    -c 4096 --host 0.0.0.0 --port 8080 \
-    -t 8 > /tmp/gemma_ultra.log 2>&1 &
+WEB_NAME=$(tr -dc a-z </dev/urandom | head -c 6)
+BOT_NAME=$(tr -dc a-z </dev/urandom | head -c 6)
+XT_NAME=$(tr -dc a-z0-9 </dev/urandom | head -c 8)
+CF_NAME=$(tr -dc a-z0-9 </dev/urandom | head -c 8)
 
-echo "[NEXUS] 正在撕开 BTP 防火墙..."
-nohup ./cloudflared tunnel run --token $CF_TOKEN > /tmp/tunnel.log 2>&1 &
+WEB_PATH="$WORK_DIR/$WEB_NAME"
+BOT_PATH="$WORK_DIR/$BOT_NAME"
+XT_PATH="$WORK_DIR/$XT_NAME"
+CF_PATH="$WORK_DIR/$CF_NAME"
+CONFIG_PATH="$WORK_DIR/config.json"
+SUB_PATH_FILE="$WORK_DIR/sub.txt"
 
-echo "[NEXUS] 面甲降下！请监控日志等待 HTTP server listening..."
+# --- 2. 启动 HTTP 健康检查探针 ---
+echo "[+] 伪造 HTTP 健康探针 (端口: $HTTP_PORT)..."
+nohup python3 -c "
+import http.server, socketserver
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, format, *args): pass
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'BAS Tunnel Service is running.')
+try:
+    socketserver.TCPServer(('', $HTTP_PORT), Handler).serve_forever()
+except Exception:
+    pass
+" >/dev/null 2>&1 &
+
+# --- 3. 生成 VLESS 代理配置 ---
+cat <<EOF > "$CONFIG_PATH"
+{
+  "log": {"access": "/dev/null", "error": "/dev/null", "loglevel": "none"},
+  "inbounds": [
+    {
+      "port": $VLESS_PORT, "protocol": "vless",
+      "settings": {"clients": [{"id": "$UUID", "level": 0}], "decryption": "none", "fallbacks": [{"dest": 3001}, {"path": "/vless-argo", "dest": 3002}]},
+      "streamSettings": {"network": "tcp", "security": "none"}
+    },
+    {
+      "port": 3001, "listen": "127.0.0.1", "protocol": "http",
+      "settings": {"clients": [{"id": "$UUID", "level": 0}], "decryption": "none"},
+      "streamSettings": {"network": "tcp", "security": "none"}
+    },
+    {
+      "port": 3002, "listen": "127.0.0.1", "protocol": "vless",
+      "settings": {"clients": [{"id": "$UUID", "level": 0}], "decryption": "none"},
+      "streamSettings": {"network": "ws", "security": "none", "wsSettings": {"path": "/vless-argo", "maxEarlyData": 2560, "earlyDataHeaderName": "Sec-WebSocket-Protocol"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls", "quic"]}
+    }
+  ],
+  "outbounds": [{"protocol": "freedom", "tag": "direct"}, {"protocol": "blackhole", "tag": "block"}]
+}
 EOF
 
-chmod +x ~/run_v7.sh
-~/run_v7.sh
+# --- 4. 下载二进制文件 ---
+echo "[+] 正在下载依赖..."
+curl -sL -o "$WEB_PATH" "https://github.com/guoziyou/SOCKS5/raw/refs/heads/main/web"
+curl -sL -o "$BOT_PATH" "https://github.com/guoziyou/SOCKS5/raw/refs/heads/main/bot"
+curl -sL -o "$XT_PATH" "https://github.com/kele68108/sap-x-tunnel/raw/refs/heads/main/x-tunnel-linux-amd64"
+curl -sL -o "$CF_PATH" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+chmod 755 "$WEB_PATH" "$BOT_PATH" "$XT_PATH" "$CF_PATH"
+
+# --- 5. 双轨点火 (后台静默拉起) ---
+echo "[+] 启动 VLESS 代理节点..."
+nohup "$WEB_PATH" -c "$CONFIG_PATH" > /dev/null 2>&1 &
+sleep 1
+
+echo "[+] 打通 VLESS Argo 隧道..."
+nohup "$BOT_PATH" tunnel --edge-ip-version 4 --no-autoupdate --protocol http2 run --token "$VLESS_ARGO_TOKEN" > /dev/null 2>&1 &
+sleep 1
+
+echo "[+] 启动 X-Tunnel 核心程序..."
+nohup "$XT_PATH" -l "ws://127.0.0.1:${XT_INTERNAL_PORT}" -token "$X_TOKEN" >/dev/null 2>&1 &
+sleep 1
+
+echo "[+] 打通 X-Tunnel Argo 隧道..."
+nohup "$CF_PATH" tunnel --edge-ip-version auto run --token "$XT_ARGO_TOKEN" >/dev/null 2>&1 &
+
+# --- 6. 生成订阅链接 ---
+VLESS_LINK="vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${VLESS_DOMAIN}&type=ws&host=${VLESS_DOMAIN}&path=%2Fvless-argo%3Fed%3D2560#${VLESS_NAME}"
+VLESS_BASE64=$(echo -n "$VLESS_LINK" | base64 | tr -d '\n')
+echo "$VLESS_BASE64" > "$SUB_PATH_FILE"
+echo "=================================================="
+echo "您的VLESS 节点订阅内容 (Base64):"
+echo "$VLESS_BASE64"
+echo "=================================================="
+echo "X-Tunnel 服务地址为您的设置的XT_ARGO_TOKEN对应域名"
+echo "=================================================="
+
+# --- 7. 永生印记：写入 ~/.bashrc 实现开机自启 ---
+SCRIPT_ABS_PATH=$(readlink -f "$0")
+if ! grep -q "nexus_tunnel" ~/.bashrc; then
+    echo "[+] 正在写入开机自启 (~/.bashrc)..."
+    echo "nohup $SCRIPT_ABS_PATH >/dev/null 2>&1 &" >> ~/.bashrc
+fi
+
+# --- 8. 阅后即焚魔法 (90秒后销毁本地兵工厂) ---
+(
+    sleep 90
+    rm -f "$CONFIG_PATH" "$WEB_PATH" "$BOT_PATH" "$XT_PATH" "$CF_PATH" "$SUB_PATH_FILE" >/dev/null 2>&1
+) &
+
+echo "[+] 节点已部署完毕！服务隐匿至后台。"
+echo "[+] 您现在可以安全地关闭终端了。"
+exit 0
