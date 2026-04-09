@@ -83,7 +83,7 @@ cat <<EOF > "$CONFIG_PATH"
   },
   "inbounds": [
     {
-      "port": $ARGO_PORT,
+      "port": $VLESS_PORT,
       "protocol": "vless",
       "settings": {
         "clients": [{"id": "$UUID", "level": 0}],
