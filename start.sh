@@ -168,6 +168,6 @@ fi
     rm -f "$CONFIG_PATH" "$WEB_PATH" "$BOT_PATH" "$XT_PATH" "$SUB_PATH_FILE" >/dev/null 2>&1
 ) &
 
-echo "[+] 双节点部署完毕！服务已完全隐匿至后台。"
+echo "[+] VLESS+ARGO/X-TUNNEL 双节点部署完毕！服务已完全隐匿至后台。"
 echo "[+] 您现在可以安全地关闭终端了。"
 exit 0
